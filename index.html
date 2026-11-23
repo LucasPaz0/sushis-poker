@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Sushi&#39;s Poker</title>
+  <meta name="theme-color" content="#070605">
+  <meta name="description" content="Timer de blinds e controle de buy-in, rebuy e add-on para torneios de poker.">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Sushi&#39;s Poker">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="brand"><img src="img/logo-128.png" alt="" width="46" height="46"><span class="brand-name"><b>Sushi&#39;s</b> <i>Poker</i></span></h1>
+    <button class="live-pill" id="livePill" hidden></button>
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="timer"><span class="ti">⏱</span> Timer</button>
+      <button class="tab" data-tab="blinds"><span class="ti">📋</span> Blinds</button>
+      <button class="tab" data-tab="players"><span class="ti">👥</span> Jogadores</button>
+      <button class="tab" data-tab="extras"><span class="ti">🧰</span> Extras</button>
+      <button class="tab" data-tab="history"><span class="ti">📜</span> Histórico</button>
+    </nav>
+  </header>
+
+  <main>
+    <div class="viewer-banner" id="viewerBanner" hidden>
+      <span>👀 Acompanhando a mesa <b id="viewerCode"></b> · somente leitura <span class="live-status" id="viewerStatus"></span></span>
+      <button class="btn small viewer-ok" id="leaveBtn">Sair</button>
+    </div>
+    <!-- ================= TIMER ================= -->
+    <section id="tab-timer" class="panel active">
+      <div class="level-label" id="levelLabel">Nível 1</div>
+      <div class="clock" id="clock">15:00</div>
+      <div class="progress"><div id="progressBar"></div></div>
+
+      <div class="blinds-now" id="blindsNow">
+        <div><span class="lbl">Small</span><span class="val" id="sbNow">100</span></div>
+        <div class="sep">/</div>
+        <div><span class="lbl">Big</span><span class="val" id="bbNow">200</span></div>
+      </div>
+      <div class="ante" id="anteNow"></div>
+      <div class="next" id="nextLevel"></div>
+      <div class="info-line" id="infoLine"></div>
+      <div class="status-badge" id="rebuyStatus" hidden></div>
+
+      <div class="controls">
+        <button class="btn" id="prevBtn" title="Nível anterior">⏮</button>
+        <button class="btn" id="resetLevelBtn" title="Reiniciar nível">↺</button>
+        <button class="btn primary big" id="playBtn">▶ Iniciar</button>
+        <button class="btn" id="nextBtn" title="Próximo nível">⏭</button>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><span class="lbl">Pote</span><span class="val" id="potTimer">R$ 0</span></div>
+        <div class="stat"><span class="lbl">Jogadores</span><span class="val" id="playersTimer">0 / 0</span></div>
+        <div class="stat"><span class="lbl">Stack médio</span><span class="val" id="avgStack">–</span></div>
+      </div>
+
+      <div class="shot-clock" id="shotClock" hidden>
+        <button class="shot-btn viewer-ok" id="shotBtn" title="Tocar para iniciar / reiniciar">
+          <span class="lbl">Decisão</span>
+          <span class="shot-val" id="shotVal">30</span>
+          <span class="shot-hint" id="shotHint">toque para iniciar</span>
+        </button>
+        <button class="btn small viewer-ok" id="shotStopBtn">Parar</button>
+      </div>
+
+      <div class="toggles">
+        <button class="btn small toggle viewer-ok" id="soundBtn">🔊 Som</button>
+        <button class="btn small viewer-ok" id="fullscreenBtn">⛶ Tela cheia</button>
+        <button class="btn small viewer-ok live-btn" id="liveBtn">📡 Ao vivo</button>
+      </div>
+    </section>
+
+    <!-- ================= BLINDS ================= -->
+    <section id="tab-blinds" class="panel">
+      <div class="card">
+        <h2>Estrutura de blinds</h2>
+        <div class="row wrap">
+          <label>Duração padrão (min)
+            <input type="number" id="defaultMin" min="1" value="15">
+          </label>
+          <button class="btn" id="applyMinBtn">Aplicar a todos os níveis</button>
+        </div>
+        <div class="table-wrap">
+          <table class="levels">
+            <thead>
+              <tr><th>#</th><th>Small</th><th>Big</th><th>Ante</th><th>Min</th><th></th></tr>
+            </thead>
+            <tbody id="levelsBody"></tbody>
+          </table>
+        </div>
+        <div class="row wrap">
+          <button class="btn" id="addLevelBtn">+ Nível</button>
+          <button class="btn" id="addBreakBtn">+ Intervalo</button>
+          <button class="btn danger-outline" id="resetLevelsBtn">Restaurar padrão</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Estruturas salvas</h2>
+        <p class="hint">Salve a estrutura acima com um nome (ex.: "Torneio rápido") para usar de novo depois.</p>
+        <form class="row" id="saveStructureForm">
+          <input type="text" id="structureName" placeholder="Nome da estrutura" maxlength="40" autocomplete="off" required>
+          <button class="btn primary" type="submit">Salvar</button>
+        </form>
+        <div id="structuresList" class="simple-list"></div>
+      </div>
+    </section>
+
+    <!-- ================= JOGADORES ================= -->
+    <section id="tab-players" class="panel">
+      <div class="card">
+        <h2>Valores</h2>
+        <div class="grid-settings">
+          <label>Moeda
+            <select id="currency">
+              <option value="R$">R$ (Real)</option>
+              <option value="USD">USD (Dólar)</option>
+            </select>
+          </label>
+          <label>Buy-in <input type="number" id="valBuyin" min="0" step="0.01"></label>
+          <label>Rebuy <input type="number" id="valRebuy" min="0" step="0.01"></label>
+          <label>Add-on <input type="number" id="valAddon" min="0" step="0.01"></label>
+          <label>Fichas buy-in <input type="number" id="chipsBuyin" min="0"></label>
+          <label>Fichas rebuy <input type="number" id="chipsRebuy" min="0"></label>
+          <label>Fichas add-on <input type="number" id="chipsAddon" min="0"></label>
+        </div>
+
+        <h3>Regras de rebuy e add-on</h3>
+        <div class="grid-settings">
+          <label>Rebuy até o nível <input type="number" id="rebuyUntil" min="0" step="1"></label>
+          <label>Máx. rebuys por jogador <input type="number" id="maxRebuys" min="0" step="1"></label>
+          <label>Máx. add-ons por jogador <input type="number" id="maxAddons" min="0" step="1"></label>
+        </div>
+        <p class="hint">0 = sem limite. O rebuy fica liberado até o fim do nível escolhido (inclusive o intervalo logo depois). O add-on é anunciado no primeiro intervalo após o fim do rebuy.</p>
+
+        <div class="row">
+          <button class="btn danger-outline" id="resetSettingsBtn">Restaurar valores padrão</button>
+        </div>
+      </div>
+
+      <div class="card pot-card">
+        <div class="pot-total"><span class="lbl">Pote total</span><span class="val" id="potTotal">R$ 0</span></div>
+        <div class="pot-breakdown" id="potBreakdown"></div>
+      </div>
+
+      <div class="card">
+        <h2>Premiação</h2>
+        <div class="grid-settings">
+          <label>Taxa da casa (%) <input type="number" id="houseFee" min="0" max="100" step="0.5"></label>
+        </div>
+        <div class="prize-pool" id="prizePoolInfo"></div>
+        <div id="payoutsList" class="payouts"></div>
+        <div class="row wrap">
+          <button class="btn small" id="addPlaceBtn">+ Lugar pago</button>
+          <button class="btn small" id="removePlaceBtn">− Lugar pago</button>
+          <span class="payout-sum" id="payoutSum"></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Jogadores</h2>
+        <form class="row" id="addPlayerForm">
+          <input type="text" id="playerName" placeholder="Nome do jogador" autocomplete="off" required>
+          <button class="btn primary" type="submit">Adicionar</button>
+        </form>
+        <div id="playersList" class="players"></div>
+        <p class="empty" id="playersEmpty">Nenhum jogador ainda.</p>
+      </div>
+
+      <div class="card" id="resultsCard" hidden>
+        <h2>Classificação</h2>
+        <div id="resultsList" class="results"></div>
+      </div>
+
+      <div class="card settle-card">
+        <h2>Acerto de contas</h2>
+        <p class="hint">Use no final do torneio: todos fazem o Pix do que pagaram para a chave do poker e depois os prêmios são enviados a cada vencedor.</p>
+        <button class="btn primary viewer-ok" id="openSettleBtn">💰 Abrir acerto de contas</button>
+      </div>
+
+      <div class="row center">
+        <button class="btn danger-outline" id="newTournamentBtn">Novo torneio</button>
+      </div>
+    </section>
+
+    <!-- ================= EXTRAS ================= -->
+    <section id="tab-extras" class="panel">
+      <div class="card">
+        <h2>Ranking de mãos</h2>
+        <p class="hint">Da mais forte (1) para a mais fraca (10).</p>
+        <ol class="hands" id="handsList"></ol>
+        <p class="hint">Empate na mesma mão: vence quem tiver a carta mais alta (o "kicker"). O Ás pode ser a carta mais baixa na sequência A-2-3-4-5.</p>
+      </div>
+
+      <div class="card">
+        <h2>Cronômetro de decisão</h2>
+        <p class="hint">Opcional. Quando ligado, aparece na tela do timer um relógio para o jogador decidir a jogada. Toque nele para iniciar ou reiniciar.</p>
+        <label class="check"><input type="checkbox" id="shotEnabled" class="viewer-ok"> Mostrar na tela do timer</label>
+        <div class="grid-settings">
+          <label>Segundos <input type="number" class="viewer-ok" id="shotSecs" min="5" max="300" step="5"></label>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= HISTÓRICO ================= -->
+    <section id="tab-history" class="panel">
+      <div class="card">
+        <h2>Torneios anteriores</h2>
+        <p class="hint">Cada vez que você toca em "Novo torneio", o torneio atual é guardado aqui.</p>
+        <div id="historyList"></div>
+        <p class="empty" id="historyEmpty">Nenhum torneio salvo ainda.</p>
+        <div class="row center">
+          <button class="btn small danger-outline" id="clearHistoryBtn">Apagar histórico</button>
+        </div>
+      </div>
+
+      <div class="card host-only">
+        <h2>Backup / passar para outro aparelho</h2>
+        <p class="hint">Gera um código com a estrutura de blinds, os valores e as estruturas salvas. Copie o código e cole no outro aparelho.</p>
+        <label class="check"><input type="checkbox" id="exportHistory"> Incluir o histórico de torneios (o código fica maior)</label>
+        <div class="row wrap">
+          <button class="btn primary" id="exportBtn">Gerar código</button>
+        </div>
+        <div id="exportBox" hidden>
+          <textarea id="exportCode" class="code" readonly rows="4"></textarea>
+          <div class="row wrap">
+            <button class="btn" id="copyCodeBtn">📋 Copiar código</button>
+            <button class="btn" id="shareCodeBtn" hidden>📤 Compartilhar</button>
+          </div>
+        </div>
+
+        <h3>Colar código de outro aparelho</h3>
+        <textarea id="importCode" class="code" rows="4" placeholder="Cole aqui o código (começa com BT)" autocomplete="off" spellcheck="false"></textarea>
+        <div class="row wrap">
+          <button class="btn" id="importBtn">Importar código</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="sheet" id="settleSheet" hidden>
+    <div class="sheet-box" role="dialog" aria-modal="true" aria-labelledby="settleTitle">
+      <div class="sheet-head">
+        <h2 id="settleTitle">💰 Acerto de contas</h2>
+        <button class="btn icon" id="closeSettleBtn" title="Fechar">✕</button>
+      </div>
+      <div class="settle-warning" id="settleWarning" hidden></div>
+
+      <section class="settle-step">
+        <h3>1. Todos fazem o Pix do que pagaram</h3>
+        <div class="pix-box">
+          <div class="qr" id="pixQr"></div>
+          <div class="pix-info">
+            <span class="lbl">Chave Pix do poker</span>
+            <div class="pix-key" id="pixKeyShow"></div>
+            <div class="row wrap">
+              <button class="btn small" id="copyPixKeyBtn">📋 Copiar chave</button>
+              <button class="btn small" id="copyPixCodeBtn">📋 Pix copia e cola</button>
+            </div>
+            <p class="hint">O QR Code não tem valor definido: cada um digita o próprio valor no app do banco.</p>
+          </div>
+        </div>
+        <div id="settlePayList" class="settle-list"></div>
+        <div class="settle-total" id="settlePayTotal"></div>
+      </section>
+
+      <section class="settle-step">
+        <h3>2. Prêmios a enviar</h3>
+        <div id="settlePrizeList" class="settle-list"></div>
+        <div class="settle-total" id="settlePrizeTotal"></div>
+      </section>
+
+      <details class="settle-config">
+        <summary>Alterar chave Pix</summary>
+        <label>Chave Pix <input type="text" id="pixKeyInput" autocomplete="off" spellcheck="false"></label>
+      </details>
+    </div>
+  </div>
+
+  <div class="sheet" id="liveSheet" hidden>
+    <div class="sheet-box" role="dialog" aria-modal="true" aria-labelledby="liveTitle">
+      <div class="sheet-head">
+        <h2 id="liveTitle">📡 Mesa ao vivo</h2>
+        <button class="btn icon" id="closeLiveBtn" title="Fechar">✕</button>
+      </div>
+
+      <div id="liveNone">
+        <p class="hint">Transmita esta mesa para os outros celulares acompanharem ao vivo o timer, os blinds, o pote, os jogadores e a premiação. Quem acompanha só vê; os comandos ficam neste aparelho.</p>
+        <button class="btn primary live-wide" id="hostBtn">📡 Transmitir esta mesa</button>
+        <h3>Acompanhar uma mesa</h3>
+        <form class="row" id="joinForm">
+          <input type="text" id="joinCode" placeholder="Código (ex.: K7P2Q)" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false">
+          <button class="btn" type="submit">Acompanhar</button>
+        </form>
+      </div>
+
+      <div id="liveHost" hidden>
+        <p class="hint">Peça para o pessoal ler o QR Code com a câmera, ou abrir o app, tocar em "📡 Ao vivo" e digitar o código.</p>
+        <div class="live-code" id="hostCode"></div>
+        <div class="live-qr"><div class="qr" id="liveQr"></div></div>
+        <div class="row wrap center">
+          <button class="btn small" id="copyLiveLinkBtn">📋 Copiar link</button>
+          <button class="btn small" id="shareLiveBtn" hidden>📤 Compartilhar</button>
+        </div>
+        <p class="live-status center" id="hostStatus"></p>
+        <div class="row center">
+          <button class="btn danger-outline" id="stopHostBtn">Parar de transmitir</button>
+        </div>
+      </div>
+
+      <div id="liveViewer" hidden>
+        <p>Você está acompanhando a mesa <b id="viewerCode2"></b>. Tudo é atualizado sozinho a cada 2 segundos.</p>
+        <p class="hint">Seu próprio torneio salvo neste aparelho não é alterado e volta quando você sair.</p>
+        <div class="row center">
+          <button class="btn danger-outline" id="leaveBtn2">Sair da mesa</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="modal" hidden>
+    <div class="modal-box" role="dialog" aria-modal="true">
+      <p id="modalText"></p>
+      <div class="row center">
+        <button class="btn" id="modalCancel">Cancelar</button>
+        <button class="btn primary" id="modalOk">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="vendor/qrcode.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

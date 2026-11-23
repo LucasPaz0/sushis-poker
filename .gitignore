@@ -1,0 +1,9 @@
+# Ligação com a Vercel e variáveis secretas (tokens) — nunca vão para o GitHub
+.vercel
+.env*
+
+# Configurações locais do Claude Code
+.claude
+
+# Dependências (se algum dia houver)
+node_modules
