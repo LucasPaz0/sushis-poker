@@ -34,6 +34,9 @@ Abra http://localhost:8080. A mesa ao vivo funciona localmente com um banco em m
 
 ## Publicar
 
+O repositório está ligado à Vercel: **todo envio (`git push`) para a branch `main` publica o site sozinho**.
+Também dá para publicar na mão:
+
 ```bash
 npx vercel deploy --prod
 ```
