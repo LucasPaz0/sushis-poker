@@ -1,10 +1,11 @@
 // Service worker: guarda os arquivos do app para funcionar offline.
 // Ao mudar qualquer arquivo do app, aumente a versão abaixo para os celulares baixarem a nova versão.
-const CACHE = 'sushis-poker-v17';
+const CACHE = 'sushis-poker-v20';
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
+  './i18n.js',
   './app.js',
   './manifest.json',
   './icons/icon-192.png',
@@ -26,6 +27,17 @@ self.addEventListener('activate', (e) => {
     caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
   );
   self.clients.claim();
+});
+
+// Tocar numa notificação (aviso de blind) abre o app
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      const open = list.find((c) => 'focus' in c);
+      return open ? open.focus() : self.clients.openWindow('./');
+    })
+  );
 });
 
 // Rede primeiro (pega atualizações), cache como reserva quando estiver offline

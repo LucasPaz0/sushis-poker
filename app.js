@@ -45,11 +45,12 @@ function defaultSettings() {
 function defaultState() {
   return {
     settings: defaultSettings(),
-    prefs: { sound: true, shotClock: false, shotSecs: 30 },
+    prefs: { sound: true, shotClock: false, shotSecs: 30, notify: false },
     levels: defaultLevels(),
     timer: { level: 0, running: false, endAt: null, remainingMs: 15 * 60000 },
     players: [],
     outSeq: 0,
+    dealer: null, // jogador sorteado para começar no botão: { id, name }
     savedStructures: [],
     history: [],
   };
@@ -101,9 +102,9 @@ const num = (v) => {
 };
 const int = (v) => Math.floor(num(v));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-const fmtNum = (n) => Number(n).toLocaleString('pt-BR');
+const fmtNum = (n) => Number(n).toLocaleString(LOCALE());
 const fmtMoneyC = (n, cur) =>
-  `${cur} ${Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  `${cur} ${Number(n).toLocaleString(LOCALE(), { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 const fmtMoney = (n) => fmtMoneyC(n, state.settings.currency);
 const fmtTime = (ms) => {
   const total = Math.max(0, Math.ceil(ms / 1000));
@@ -119,7 +120,7 @@ const escapeHtml = (s) =>
 const setText = (el, text) => { if (el.textContent !== text) el.textContent = text; };
 
 /* ---------------- Confirmação / aviso (no lugar de confirm/alert do navegador) ---------------- */
-function ask(text, { okText = 'Confirmar', cancel = true, cancelText = 'Cancelar' } = {}) {
+function ask(text, { okText = tr('Confirmar'), cancel = true, cancelText = tr('Cancelar') } = {}) {
   return new Promise((resolve) => {
     const modal = $('#modal');
     $('#modalText').textContent = text;
@@ -194,7 +195,7 @@ async function setWakeLock(on) {
 }
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
-    if (state.timer.running) setWakeLock(true);
+    if (state.timer.running || isTv()) setWakeLock(true);
     tick();
   }
 });
@@ -207,6 +208,12 @@ const remaining = () => (T().running ? T().endAt - Date.now() : T().remainingMs)
 const levelNumberAt = (i) => state.levels.slice(0, i + 1).filter((l) => !l.isBreak).length;
 
 function levelName(i) {
+  const lv = state.levels[i];
+  if (!lv) return '';
+  return lv.isBreak ? tr('Intervalo') : tr('Nível {n}', { n: levelNumberAt(i) });
+}
+// Nome do nível sempre em português, para guardar nos dados (é traduzido na hora de mostrar)
+function levelNamePt(i) {
   const lv = state.levels[i];
   if (!lv) return '';
   return lv.isBreak ? 'Intervalo' : `Nível ${levelNumberAt(i)}`;
@@ -243,6 +250,7 @@ const addonEnabled = () => state.settings.addon > 0 || state.settings.chipsAddon
 
 /* ---------------- Timer ---------------- */
 let warnedLevel = -1;
+let seenLevel = null; // último nível visto, para notificar quando mudar
 
 function clampLevel() {
   if (T().level > state.levels.length - 1) {
@@ -284,6 +292,10 @@ function tick() {
     if (rem <= 60000 && rem > 0 && warnedLevel !== t.level && levelMs(t.level) > 60000) {
       warnedLevel = t.level;
       beep(1, 660);
+      if (document.visibilityState !== 'visible') {
+        const nx = state.levels[t.level + 1];
+        if (nx) sendNotification(tr('⏳ Falta 1 minuto'), tr('Depois: {x}', { x: levelDesc(t.level + 1) }));
+      }
     }
     if (rem <= 0) {
       let changed = false;
@@ -306,8 +318,21 @@ function tick() {
       save();
     }
   }
+  // Mudou de nível (aqui ou, na mesa ao vivo, no celular que transmite): avisa se o app está em segundo plano
+  if (seenLevel !== null && t.level > seenLevel && document.visibilityState !== 'visible') {
+    sendNotification(tr('🔔 {level} começou', { level: levelName(t.level) }), levelDesc(t.level));
+  }
+  seenLevel = t.level;
   renderTimer();
   tickShot();
+}
+
+// Descrição curta de um nível, para as notificações
+function levelDesc(i) {
+  const lv = state.levels[i];
+  if (!lv) return '';
+  if (lv.isBreak) return tr('☕ Intervalo de {min} min', { min: lv.min });
+  return `Blinds ${fmtNum(lv.sb)} / ${fmtNum(lv.bb)}${lv.ante ? ` · ante ${fmtNum(lv.ante)}` : ''}`;
 }
 
 function renderTimer() {
@@ -324,7 +349,7 @@ function renderTimer() {
 
   if (lv.isBreak) {
     $('#blindsNow').style.visibility = 'hidden';
-    setText($('#anteNow'), '☕ Pausa');
+    setText($('#anteNow'), tr('☕ Pausa'));
   } else {
     $('#blindsNow').style.visibility = 'visible';
     setText($('#sbNow'), fmtNum(lv.sb));
@@ -334,35 +359,39 @@ function renderTimer() {
 
   const nx = state.levels[t.level + 1];
   setText($('#nextLevel'), !nx
-    ? 'Último nível'
+    ? tr('Último nível')
     : nx.isBreak
-      ? `Próximo: Intervalo (${nx.min} min)`
-      : `Próximo: ${fmtNum(nx.sb)} / ${fmtNum(nx.bb)}${nx.ante ? ` (ante ${fmtNum(nx.ante)})` : ''}`);
+      ? tr('Próximo: Intervalo ({min} min)', { min: nx.min })
+      : `${tr('Próximo:')} ${fmtNum(nx.sb)} / ${fmtNum(nx.bb)}${nx.ante ? ` (ante ${fmtNum(nx.ante)})` : ''}`);
 
   // Próximo intervalo + tempo de torneio
   const nb = lv.isBreak ? null : nextBreakMs();
   const parts = [];
-  if (nb !== null) parts.push(`☕ Intervalo em ${fmtTime(nb)}`);
-  parts.push(`⏱ Torneio ${fmtTime(elapsedMs())}`);
+  if (nb !== null) parts.push(tr('☕ Intervalo em {time}', { time: fmtTime(nb) }));
+  parts.push(tr('⏱ Torneio {time}', { time: fmtTime(elapsedMs()) }));
   setText($('#infoLine'), parts.join('   ·   '));
 
   // Situação do rebuy / add-on
   const badge = $('#rebuyStatus');
   let status = '';
   let cls = '';
-  if (t.level === addonBreakIndex() && addonEnabled()) { status = '➕ Hora do add-on!'; cls = 'addon'; }
+  if (t.level === addonBreakIndex() && addonEnabled()) { status = tr('➕ Hora do add-on!'); cls = 'addon'; }
   else if (state.settings.rebuyUntil) {
-    if (rebuyOpen()) { status = `🔁 Rebuy aberto até o nível ${state.settings.rebuyUntil}`; cls = 'open'; }
-    else { status = '🔒 Rebuy encerrado'; cls = 'closed'; }
+    if (rebuyOpen()) { status = tr('🔁 Rebuy aberto até o nível {n}', { n: state.settings.rebuyUntil }); cls = 'open'; }
+    else { status = tr('🔒 Rebuy encerrado'); cls = 'closed'; }
   }
   badge.hidden = !status;
   setText(badge, status);
   badge.className = `status-badge ${cls}`;
 
-  setText($('#playBtn'), t.running ? '⏸ Pausar' : (rem < total && rem > 0 ? '▶ Continuar' : '▶ Iniciar'));
+  const dealerOn = !!state.dealer && t.level === 0;
+  $('#dealerBadge').hidden = !dealerOn;
+  if (dealerOn) setText($('#dealerBadge'), tr('🔘 Começa no botão: {name}', { name: state.dealer.name }));
+
+  setText($('#playBtn'), t.running ? tr('⏸ Pausar') : (rem < total && rem > 0 ? tr('▶ Continuar') : tr('▶ Iniciar')));
   $('#playBtn').classList.toggle('primary', !t.running);
 
-  const title = `${fmtTime(rem)} · ${lv.isBreak ? 'Intervalo' : `${fmtNum(lv.sb)}/${fmtNum(lv.bb)}`}`;
+  const title = `${fmtTime(rem)} · ${lv.isBreak ? tr('Intervalo') : `${fmtNum(lv.sb)}/${fmtNum(lv.bb)}`}`;
   if (document.title !== title) document.title = title;
   renderAvgStack();
 }
@@ -374,12 +403,58 @@ $('#resetLevelBtn').addEventListener('click', () => goTo(T().level));
 
 /* ---------------- Som / tela cheia ---------------- */
 function renderToggles() {
-  $('#soundBtn').textContent = state.prefs.sound ? '🔊 Som' : '🔇 Som';
+  $('#soundBtn').textContent = tr(state.prefs.sound ? '🔊 Som' : '🔇 Som');
   $('#soundBtn').classList.toggle('off', !state.prefs.sound);
   $('#fullscreenBtn').hidden = !fsSupported();
-  $('#fullscreenBtn').textContent = fsElement() ? '⛶ Sair da tela cheia' : '⛶ Tela cheia';
-  document.documentElement.classList.toggle('fs', !!fsElement());
+  $('#fullscreenBtn').textContent = tr(fsElement() ? '⛶ Sair da tela cheia' : '⛶ Tela cheia');
+  const notifOn = !!state.prefs.notify && notifPermission() === 'granted';
+  $('#notifyBtn').textContent = tr(notifOn ? '🔔 Avisos' : '🔕 Avisos');
+  $('#notifyBtn').classList.toggle('off', !notifOn);
+  const tv = isTv();
+  document.documentElement.classList.toggle('tv', tv);
+  document.documentElement.classList.toggle('fs', !!fsElement() || tv);
+  $('#tvBar').hidden = !tv;
+  $('#tvFsBtn').hidden = !fsSupported();
+  $('#tvFsBtn').textContent = tr(fsElement() ? '⛶ Sair da tela cheia' : '⛶ Tela cheia');
 }
+
+/* ---------------- Avisos por notificação ----------------
+   Avisa 1 minuto antes de o blind subir e quando o nível muda, se o app estiver em segundo plano
+   (outro app aberto ou tela apagada). Depende do celular deixar o app rodando em segundo plano. */
+const notifPermission = () => ('Notification' in window ? Notification.permission : 'unsupported');
+
+async function sendNotification(title, body) {
+  if (!state.prefs.notify || notifPermission() !== 'granted') return;
+  const opts = {
+    body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png',
+    tag: 'sushis-poker-blind', renotify: true, vibrate: [300, 120, 300],
+  };
+  try {
+    const reg = 'serviceWorker' in navigator && await navigator.serviceWorker.getRegistration();
+    if (reg) { await reg.showNotification(title, opts); return; }
+  } catch (e) { /* tenta do jeito simples abaixo */ }
+  try { new Notification(title, opts); } catch (e) { /* não suportado */ }
+}
+
+async function toggleNotify() {
+  if (state.prefs.notify && notifPermission() === 'granted') {
+    state.prefs.notify = false;
+    save(); renderToggles();
+    return;
+  }
+  if (notifPermission() === 'unsupported') {
+    return notify(tr('Este navegador não mostra notificações. No iPhone, primeiro adicione o app à Tela de Início (Compartilhar → Adicionar à Tela de Início) e ligue os avisos abrindo o app por lá.'));
+  }
+  let perm = notifPermission();
+  if (perm === 'default') perm = await Notification.requestPermission();
+  if (perm !== 'granted') {
+    return notify(tr('As notificações estão bloqueadas para este site. Libere nas configurações do navegador (permissões do site → Notificações) e toque em "Avisos" de novo.'));
+  }
+  state.prefs.notify = true;
+  save(); renderToggles();
+  sendNotification(tr('🔔 Avisos ligados'), tr('Você será avisado 1 minuto antes de o blind subir e quando o nível mudar.'));
+}
+$('#notifyBtn').addEventListener('click', toggleNotify);
 $('#soundBtn').addEventListener('click', () => {
   state.prefs.sound = !state.prefs.sound;
   save(); renderToggles();
@@ -422,9 +497,9 @@ function renderLevels() {
     if (lv.isBreak) {
       return `<tr class="break-row${cur}" data-i="${i}">
         <td>☕</td>
-        <td colspan="3" class="break-label">Intervalo</td>
+        <td colspan="3" class="break-label">${tr('Intervalo')}</td>
         <td><input type="number" min="1" data-f="min" value="${lv.min}" inputmode="numeric"></td>
-        <td><button class="btn icon" data-del="${i}" title="Remover">✕</button></td>
+        <td><button class="btn icon" data-del="${i}" title="${tr('Remover')}">✕</button></td>
       </tr>`;
     }
     n++;
@@ -434,7 +509,7 @@ function renderLevels() {
       <td><input type="number" min="0" data-f="bb" value="${lv.bb}" inputmode="numeric"></td>
       <td><input type="number" min="0" data-f="ante" value="${lv.ante}" inputmode="numeric"></td>
       <td><input type="number" min="1" data-f="min" value="${lv.min}" inputmode="numeric"></td>
-      <td><button class="btn icon" data-del="${i}" title="Remover">✕</button></td>
+      <td><button class="btn icon" data-del="${i}" title="${tr('Remover')}">✕</button></td>
     </tr>`;
   }).join('');
 }
@@ -458,7 +533,7 @@ $('#levelsBody').addEventListener('change', (e) => {
 $('#levelsBody').addEventListener('click', (e) => {
   const del = e.target.closest('[data-del]');
   if (!del) return;
-  if (state.levels.length <= 1) return notify('A estrutura precisa ter pelo menos um nível.');
+  if (state.levels.length <= 1) return notify(tr('A estrutura precisa ter pelo menos um nível.'));
   const i = +del.dataset.del;
   state.levels.splice(i, 1);
   if (i < T().level) T().level--;
@@ -494,7 +569,7 @@ function useLevels(levels) {
 }
 
 $('#resetLevelsBtn').addEventListener('click', async () => {
-  if (!await ask('Restaurar a estrutura de blinds padrão? O timer volta para o nível 1.')) return;
+  if (!await ask(tr('Restaurar a estrutura de blinds padrão? O timer volta para o nível 1.'))) return;
   useLevels(defaultLevels());
 });
 
@@ -506,14 +581,14 @@ function renderStructures() {
       const n = s.levels.filter((l) => !l.isBreak).length;
       const b = s.levels.length - n;
       return `<div class="simple-item">
-        <div><b>${escapeHtml(s.name)}</b><div class="muted">${n} níveis${b ? ` · ${b} intervalo${b > 1 ? 's' : ''}` : ''}</div></div>
+        <div><b>${escapeHtml(s.name)}</b><div class="muted">${tr('{n} níveis', { n })}${b ? ` · ${tr(b > 1 ? '{b} intervalos' : '{b} intervalo', { b })}` : ''}</div></div>
         <div class="pactions">
-          <button class="btn small" data-load="${s.id}">Usar</button>
-          <button class="btn icon small" data-sdel="${s.id}" title="Apagar">🗑</button>
+          <button class="btn small" data-load="${s.id}">${tr('Usar')}</button>
+          <button class="btn icon small" data-sdel="${s.id}" title="${tr('Apagar')}">🗑</button>
         </div>
       </div>`;
     }).join('')
-    : '<p class="empty">Nenhuma estrutura salva.</p>';
+    : `<p class="empty">${tr('Nenhuma estrutura salva.')}</p>`;
 }
 
 $('#saveStructureForm').addEventListener('submit', async (e) => {
@@ -522,7 +597,7 @@ $('#saveStructureForm').addEventListener('submit', async (e) => {
   if (!name) return;
   const existing = state.savedStructures.find((s) => s.name.toLowerCase() === name.toLowerCase());
   if (existing) {
-    if (!await ask(`Já existe uma estrutura chamada "${existing.name}". Substituir?`)) return;
+    if (!await ask(tr('Já existe uma estrutura chamada "{name}". Substituir?', { name: existing.name }))) return;
     existing.levels = JSON.parse(JSON.stringify(state.levels));
   } else {
     state.savedStructures.push({ id: uid(), name, levels: JSON.parse(JSON.stringify(state.levels)) });
@@ -536,11 +611,11 @@ $('#structuresList').addEventListener('click', async (e) => {
   const del = e.target.closest('[data-sdel]');
   if (load) {
     const s = state.savedStructures.find((x) => x.id === load.dataset.load);
-    if (s && await ask(`Usar a estrutura "${s.name}"? A estrutura atual será substituída e o timer volta para o nível 1.`)) useLevels(s.levels);
+    if (s && await ask(tr('Usar a estrutura "{name}"? A estrutura atual será substituída e o timer volta para o nível 1.', { name: s.name }))) useLevels(s.levels);
   }
   if (del) {
     const s = state.savedStructures.find((x) => x.id === del.dataset.sdel);
-    if (s && await ask(`Apagar a estrutura "${s.name}"?`)) {
+    if (s && await ask(tr('Apagar a estrutura "{name}"?', { name: s.name }))) {
       state.savedStructures = state.savedStructures.filter((x) => x !== s);
       save(); renderStructures();
     }
@@ -575,7 +650,7 @@ for (const [key, sel] of Object.entries(settingInputs)) {
 }
 
 $('#resetSettingsBtn').addEventListener('click', async () => {
-  if (!await ask('Voltar moeda, valores, fichas, regras e premiação para o padrão? Os jogadores continuam, mas o pote é recalculado com os novos valores.')) return;
+  if (!await ask(tr('Voltar moeda, valores, fichas, regras e premiação para o padrão? Os jogadores continuam, mas o pote é recalculado com os novos valores.'))) return;
   state.settings = defaultSettings();
   fillSettings();
   save(); renderPlayers(); renderTimer();
@@ -588,7 +663,7 @@ const prizeFor = (place, pool) => (pool * (state.settings.payouts[place - 1] || 
 function renderPayouts() {
   $('#payoutsList').innerHTML = state.settings.payouts.map((pct, i) => `
     <div class="payout-row">
-      <span class="place">${i + 1}º</span>
+      <span class="place">${ord(i + 1)}</span>
       <input type="number" min="0" max="100" step="0.5" data-pi="${i}" value="${pct}" inputmode="decimal">
       <span class="muted">%</span>
       <span class="amount" data-pa="${i}"></span>
@@ -604,10 +679,10 @@ function updatePrizeAmounts(t = totals()) {
     if (el) el.textContent = fmtMoney(prizeFor(i + 1, pool));
   });
   const fee = t.pot - pool;
-  $('#prizePoolInfo').innerHTML = `Valor para prêmios: <b>${fmtMoney(pool)}</b>${fee > 0 ? ` <span class="muted">(taxa da casa: ${fmtMoney(fee)})</span>` : ''}`;
+  $('#prizePoolInfo').innerHTML = `${tr('Valor para prêmios:')} <b>${fmtMoney(pool)}</b>${fee > 0 ? ` <span class="muted">${tr('(taxa da casa: {fee})', { fee: fmtMoney(fee) })}</span>` : ''}`;
   const sum = Math.round(s.payouts.reduce((a, b) => a + b, 0) * 100) / 100;
   const el = $('#payoutSum');
-  el.textContent = sum === 100 ? 'Total: 100% ✔' : `Total: ${fmtNum(sum)}% — precisa somar 100%`;
+  el.textContent = sum === 100 ? tr('Total: 100% ✔') : tr('Total: {sum}% — precisa somar 100%', { sum: fmtNum(sum) });
   el.classList.toggle('bad', sum !== 100);
 }
 
@@ -693,18 +768,18 @@ function renderPlayers() {
     const canRebuy = open && (!s.maxRebuys || p.rebuys < s.maxRebuys);
     const canAddon = !p.out && (!s.maxAddons || p.addons < s.maxAddons);
     let info = '';
-    if (p.out) info = `<div class="pplace">${place}º lugar${p.outLevel ? ` · ${escapeHtml(p.outLevel)}` : ''}${prize ? ` · 🏆 ${fmtMoney(prize)}` : ''}</div>`;
-    else if (place === 1) info = `<div class="pplace win">🏆 Campeão · ${fmtMoney(prize)}</div>`;
+    if (p.out) info = `<div class="pplace">${tr('{place} lugar', { place: ord(place) })}${p.outLevel ? ` · ${escapeHtml(trLevel(p.outLevel))}` : ''}${prize ? ` · 🏆 ${fmtMoney(prize)}` : ''}</div>`;
+    else if (place === 1) info = `<div class="pplace win">${tr('🏆 Campeão')} · ${fmtMoney(prize)}</div>`;
     return `
     <div class="player${p.out ? ' out' : ''}">
       <div>
         <div class="pname">${escapeHtml(p.name)}</div>
-        <div class="ptotal">Pagou ${fmtMoney(playerTotal(p))}</div>
+        <div class="ptotal">${tr('Pagou {v}', { v: fmtMoney(playerTotal(p)) })}</div>
         ${info}
       </div>
       <div class="pactions">
-        <button class="btn small" data-act="out" data-id="${p.id}">${p.out ? 'Voltar' : 'Eliminar'}</button>
-        <button class="btn icon small" data-act="del" data-id="${p.id}" title="Remover">🗑</button>
+        <button class="btn small" data-act="out" data-id="${p.id}">${tr(p.out ? 'Voltar' : 'Eliminar')}</button>
+        <button class="btn icon small" data-act="del" data-id="${p.id}" title="${tr('Remover')}">🗑</button>
       </div>
       <div class="counters">
         ${counter(p, 'buyins', 'Buy-in')}
@@ -720,7 +795,7 @@ function renderPlayers() {
     <span>Buy-ins: <b>${t.buyins}</b> (${fmtMoney(t.buyins * s.buyin)})</span>
     <span>Rebuys: <b>${t.rebuys}</b> (${fmtMoney(t.rebuys * s.rebuy)})</span>
     <span>Add-ons: <b>${t.addons}</b> (${fmtMoney(t.addons * s.addon)})</span>
-    <span>Fichas em jogo: <b>${fmtNum(t.chips)}</b></span>`;
+    <span>${tr('Fichas em jogo:')} <b>${fmtNum(t.chips)}</b></span>`;
 
   updatePrizeAmounts(t);
   renderResults(places, pool);
@@ -730,7 +805,62 @@ function renderPlayers() {
   $('#playersTimer').textContent = `${t.alive} / ${state.players.length}`;
   renderAvgStack(t);
   renderPotRanking(t);
+  renderDealer();
 }
+
+/* ---------------- Sorteio de quem começa no botão ---------------- */
+function renderDealer() {
+  const alive = state.players.filter((p) => !p.out);
+  $('#dealerDraw').hidden = state.players.length < 2;
+  $('#drawDealerBtn').textContent = tr(state.dealer ? '🎲 Sortear de novo' : '🎲 Sortear quem começa no botão');
+  $('#drawDealerBtn').disabled = alive.length < 2;
+  $('#dealerResult').innerHTML = state.dealer
+    ? `${tr('🔘 Começa no botão:')} <b>${escapeHtml(state.dealer.name)}</b>`
+    : '';
+}
+
+// Número aleatório justo (crypto) entre 0 e n-1
+function randomIndex(n) {
+  const buf = new Uint32Array(1);
+  const limit = Math.floor(0x100000000 / n) * n;
+  do crypto.getRandomValues(buf); while (buf[0] >= limit);
+  return buf[0] % n;
+}
+
+let drawing = false;
+async function drawDealer() {
+  if (drawing) return;
+  const alive = state.players.filter((p) => !p.out);
+  if (alive.length < 2) return notify(tr('Cadastre pelo menos 2 jogadores para sortear.'));
+  const winner = alive[randomIndex(alive.length)];
+
+  // Animação: os nomes vão passando cada vez mais devagar até parar no sorteado
+  drawing = true;
+  const modal = $('#drawModal');
+  const nameEl = $('#drawName');
+  $('#drawOk').hidden = true;
+  nameEl.classList.remove('done');
+  modal.hidden = false;
+  const steps = 18 + randomIndex(alive.length);
+  let i = randomIndex(alive.length);
+  for (let k = 0; k < steps; k++) {
+    nameEl.textContent = alive[i % alive.length].name;
+    i++;
+    if (state.prefs.sound) beep(1, 520, 0.03);
+    await new Promise((r) => setTimeout(r, 50 + k * k * 0.9));
+  }
+  nameEl.textContent = winner.name;
+  nameEl.classList.add('done');
+  if (state.prefs.sound) beep(2, 1000);
+
+  state.dealer = { id: winner.id, name: winner.name };
+  save(); renderDealer(); renderTimer();
+  drawing = false;
+  $('#drawOk').hidden = false;
+  $('#drawOk').focus();
+}
+$('#drawDealerBtn').addEventListener('click', drawDealer);
+$('#drawOk').addEventListener('click', () => { $('#drawModal').hidden = true; });
 
 // Tabela da tela do timer: o que cada jogador colocou no pote, de quem colocou mais para quem colocou menos.
 // Empate no valor = mesma posição (ex.: 1º, 1º, 3º).
@@ -740,14 +870,14 @@ function renderPotRanking(t = totals()) {
   if (!state.players.length) return;
   const rows = state.players
     .map((p) => ({ p, total: playerTotal(p) }))
-    .sort((a, b) => b.total - a.total || a.p.name.localeCompare(b.p.name, 'pt-BR'));
+    .sort((a, b) => b.total - a.total || a.p.name.localeCompare(b.p.name, LOCALE()));
   let pos = 0;
   $('#potRankingBody').innerHTML = rows.map(({ p, total }, i) => {
     if (i === 0 || total !== rows[i - 1].total) pos = i + 1;
-    const rank = `${pos}º`;
+    const rank = ord(pos);
     return `<tr class="${p.out ? 'out' : ''}">
       <td class="c rank">${rank}</td>
-      <td class="pname-cell">${escapeHtml(p.name)}${p.out ? ' <span class="muted">(fora)</span>' : ''}</td>
+      <td class="pname-cell">${escapeHtml(p.name)}${p.out ? ` <span class="muted">${tr('(fora)')}</span>` : ''}</td>
       <td class="c">${p.buyins}</td>
       <td class="c">${p.rebuys}</td>
       <td class="c">${p.addons}</td>
@@ -777,13 +907,13 @@ function renderResults(places, pool) {
       const place = places.get(p.id);
       const prize = prizeFor(place, pool);
       return `<div class="result-row${prize ? ' paid' : ''}">
-        <span class="place">${place === 1 ? '🏆' : `${place}º`}</span>
-        <span class="rname">${escapeHtml(p.name)}${p.outLevel ? ` <span class="muted">· ${escapeHtml(p.outLevel)}</span>` : ''}</span>
+        <span class="place">${place === 1 ? '🏆' : ord(place)}</span>
+        <span class="rname">${escapeHtml(p.name)}${p.outLevel ? ` <span class="muted">· ${escapeHtml(trLevel(p.outLevel))}</span>` : ''}</span>
         <span class="amount">${prize ? fmtMoney(prize) : ''}</span>
       </div>`;
     });
   const inPlay = alive.length > 1
-    ? `<div class="result-row inplay"><span class="place">—</span><span class="rname">Em jogo: ${alive.map((p) => escapeHtml(p.name)).join(', ')}</span><span></span></div>`
+    ? `<div class="result-row inplay"><span class="place">—</span><span class="rname">${tr('Em jogo:')} ${alive.map((p) => escapeHtml(p.name)).join(', ')}</span><span></span></div>`
     : '';
   $('#resultsList').innerHTML = inPlay + rows.join('');
 }
@@ -803,7 +933,7 @@ function setOut(p, out) {
   if (out) {
     state.outSeq = (state.outSeq || 0) + 1;
     p.outOrder = state.outSeq;
-    p.outLevel = levelName(T().level);
+    p.outLevel = levelNamePt(T().level);
   } else {
     delete p.outOrder;
     delete p.outLevel;
@@ -821,8 +951,9 @@ $('#playersList').addEventListener('click', async (e) => {
   if (act === 'dec') p[f] = Math.max(0, p[f] - 1);
   if (act === 'out') setOut(p, !p.out);
   if (act === 'del') {
-    if (!await ask(`Remover ${p.name}?`)) return;
+    if (!await ask(tr('Remover {name}?', { name: p.name }))) return;
     state.players = state.players.filter((x) => x !== p);
+    if (state.dealer && state.dealer.id === p.id) state.dealer = null;
   }
   // Rebuy traz o jogador eliminado de volta ao jogo
   if (act === 'inc' && f === 'rebuys' && p.out) setOut(p, false);
@@ -833,8 +964,8 @@ $('#playersList').addEventListener('click', async (e) => {
   if (act === 'out' && p.out && aliveBefore === 2 && alive.length === 1) {
     if (T().running) pause();
     beep(3, 1200);
-    const open = await ask(`🏆 ${alive[0].name} venceu o torneio! Prêmio: ${fmtMoney(prizeFor(1, prizePool()))}`,
-      { okText: '💰 Acerto de contas', cancelText: 'Fechar' });
+    const open = await ask(tr('🏆 {name} venceu o torneio! Prêmio: {prize}', { name: alive[0].name, prize: fmtMoney(prizeFor(1, prizePool())) }),
+      { okText: tr('💰 Acerto de contas'), cancelText: tr('Fechar') });
     if (open) openSettle();
   }
 });
@@ -859,7 +990,7 @@ function buildHistoryEntry() {
     currency: state.settings.currency,
     pot: t.pot,
     prizePool: pool,
-    level: levelName(T().level),
+    level: levelNamePt(T().level),
     elapsedMs: elapsedMs(),
     players,
   };
@@ -868,12 +999,13 @@ function buildHistoryEntry() {
 $('#newTournamentBtn').addEventListener('click', async () => {
   const has = state.players.length > 0;
   const msg = has
-    ? 'Começar um novo torneio? O torneio atual será guardado no Histórico, os jogadores serão apagados e o timer volta ao nível 1. A estrutura de blinds e os valores são mantidos.'
-    : 'Começar um novo torneio? O timer volta ao nível 1.';
+    ? tr('Começar um novo torneio? O torneio atual será guardado no Histórico, os jogadores serão apagados e o timer volta ao nível 1. A estrutura de blinds e os valores são mantidos.')
+    : tr('Começar um novo torneio? O timer volta ao nível 1.');
   if (!await ask(msg)) return;
   if (has) state.history.unshift(buildHistoryEntry());
   state.players = [];
   state.outSeq = 0;
+  state.dealer = null;
   state.timer = { level: 0, running: false, endAt: null, remainingMs: levelMs(0) };
   warnedLevel = -1;
   setWakeLock(false);
@@ -885,25 +1017,25 @@ function renderHistory() {
   $('#historyEmpty').style.display = list.length ? 'none' : 'block';
   $('#clearHistoryBtn').hidden = !list.length;
   $('#historyList').innerHTML = list.map((h) => {
-    const date = new Date(h.date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    const date = new Date(h.date).toLocaleString(LOCALE(), { dateStyle: 'short', timeStyle: 'short' });
     const champ = h.players.find((p) => p.place === 1);
     const money = (n) => fmtMoneyC(n, h.currency);
     const rows = h.players.map((p) => `<tr>
-        <td>${p.place ? `${p.place}º` : 'Em jogo'}</td>
+        <td>${p.place ? ord(p.place) : tr('Em jogo')}</td>
         <td>${escapeHtml(p.name)}</td>
         <td class="r">${money(p.paid)}</td>
         <td class="r">${p.prize ? money(p.prize) : '–'}</td>
       </tr>`).join('');
     return `<details class="hist">
       <summary>
-        <div><b>${date}</b> · ${h.players.length} jogadores · pote ${money(h.pot)}</div>
-        <div class="muted">${champ ? `🏆 ${escapeHtml(champ.name)}` : 'Sem campeão definido'} · parou no ${escapeHtml(h.level)} · ${fmtTime(h.elapsedMs)} de jogo</div>
+        <div><b>${date}</b> · ${tr('{n} jogadores · pote {pot}', { n: h.players.length, pot: money(h.pot) })}</div>
+        <div class="muted">${champ ? `🏆 ${escapeHtml(champ.name)}` : tr('Sem campeão definido')} · ${tr('parou no {level}', { level: escapeHtml(trLevel(h.level)) })} · ${tr('{time} de jogo', { time: fmtTime(h.elapsedMs) })}</div>
       </summary>
       <div class="table-wrap"><table class="hist-table">
-        <thead><tr><th>Pos.</th><th>Jogador</th><th class="r">Pagou</th><th class="r">Prêmio</th></tr></thead>
+        <thead><tr><th>${tr('Pos.')}</th><th>${tr('Jogador')}</th><th class="r">${tr('Pagou')}</th><th class="r">${tr('Prêmio')}</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
-      <div class="row"><button class="btn small danger-outline" data-hdel="${h.id}">Apagar este torneio</button></div>
+      <div class="row"><button class="btn small danger-outline" data-hdel="${h.id}">${tr('Apagar este torneio')}</button></div>
     </details>`;
   }).join('');
 }
@@ -911,13 +1043,13 @@ function renderHistory() {
 $('#historyList').addEventListener('click', async (e) => {
   const del = e.target.closest('[data-hdel]');
   if (!del) return;
-  if (!await ask('Apagar este torneio do histórico?')) return;
+  if (!await ask(tr('Apagar este torneio do histórico?'))) return;
   state.history = state.history.filter((h) => h.id !== del.dataset.hdel);
   save(); renderHistory();
 });
 
 $('#clearHistoryBtn').addEventListener('click', async () => {
-  if (!await ask('Apagar todo o histórico de torneios? Não dá para desfazer.')) return;
+  if (!await ask(tr('Apagar todo o histórico de torneios? Não dá para desfazer.'))) return;
   state.history = [];
   save(); renderHistory();
 });
@@ -988,8 +1120,8 @@ $('#copyCodeBtn').addEventListener('click', async () => {
     try { ok = document.execCommand('copy'); } catch (e2) { ok = false; }
   }
   const btn = $('#copyCodeBtn');
-  btn.textContent = ok ? '✔ Copiado!' : 'Selecione e copie manualmente';
-  setTimeout(() => { btn.textContent = '📋 Copiar código'; }, 2000);
+  btn.textContent = tr(ok ? '✔ Copiado!' : 'Selecione e copie manualmente');
+  setTimeout(() => { btn.textContent = tr('📋 Copiar código'); }, 2000);
 });
 
 $('#shareCodeBtn').addEventListener('click', async () => {
@@ -998,13 +1130,15 @@ $('#shareCodeBtn').addEventListener('click', async () => {
 
 $('#importBtn').addEventListener('click', async () => {
   const code = $('#importCode').value.trim();
-  if (!code) return notify('Cole o código no campo acima.');
+  if (!code) return notify(tr('Cole o código no campo acima.'));
   let data;
   try { data = await readCode(code); } catch (e) {
-    return notify('Código inválido. Confira se copiou o código inteiro, do começo (BT…) até o fim.');
+    return notify(tr('Código inválido. Confira se copiou o código inteiro, do começo (BT…) até o fim.'));
   }
-  const extra = data.h ? ', as estruturas salvas e o histórico' : ' e as estruturas salvas';
-  if (!await ask(`Importar este código? A estrutura de blinds, os valores${extra} deste aparelho serão substituídos. Os jogadores do torneio atual continuam.`)) return;
+  const importMsg = data.h
+    ? 'Importar este código? A estrutura de blinds, os valores, as estruturas salvas e o histórico deste aparelho serão substituídos. Os jogadores do torneio atual continuam.'
+    : 'Importar este código? A estrutura de blinds, os valores e as estruturas salvas deste aparelho serão substituídos. Os jogadores do torneio atual continuam.';
+  if (!await ask(tr(importMsg))) return;
   const settings = defaultSettings();
   SETTING_KEYS.forEach((k, i) => { if (data.s && data.s[i] !== undefined && data.s[i] !== null) settings[k] = data.s[i]; });
   if (!CURRENCIES.includes(settings.currency)) settings.currency = 'R$';
@@ -1016,7 +1150,7 @@ $('#importBtn').addEventListener('click', async () => {
   useLevels(unpackLevels(data.l));
   renderStructures(); renderHistory();
   $('#importCode').value = '';
-  notify('Código importado!');
+  notify(tr('Código importado!'));
 });
 
 /* ---------------- Pix (código "copia e cola" / QR) ----------------
@@ -1069,13 +1203,13 @@ function renderSettle() {
 
   // Aviso se o torneio ainda não acabou
   const warn = $('#settleWarning');
-  if (!state.players.length) { warn.hidden = false; warn.textContent = 'Nenhum jogador cadastrado ainda.'; }
-  else if (alive.length > 1) { warn.hidden = false; warn.textContent = `⚠ O torneio ainda não terminou (${alive.length} jogadores em jogo). Os prêmios abaixo podem mudar.`; }
+  if (!state.players.length) { warn.hidden = false; warn.textContent = tr('Nenhum jogador cadastrado ainda.'); }
+  else if (alive.length > 1) { warn.hidden = false; warn.textContent = tr('⚠ O torneio ainda não terminou ({n} jogadores em jogo). Os prêmios abaixo podem mudar.', { n: alive.length }); }
   else warn.hidden = true;
 
   // QR Code + chave
   const key = state.settings.pixKey.trim();
-  $('#pixKeyShow').textContent = key || '(nenhuma chave definida)';
+  $('#pixKeyShow').textContent = key || tr('(nenhuma chave definida)');
   const qrBox = $('#pixQr');
   if (key && typeof qrcode === 'function') {
     const qr = qrcode(0, 'M');
@@ -1093,7 +1227,7 @@ function renderSettle() {
       <span class="sname">${escapeHtml(p.name)}</span>
       <span class="sval">${fmtMoney(playerTotal(p))}</span>
     </label>`).join('');
-  $('#settlePayTotal').innerHTML = `Recebido: <b>${fmtMoney(paidSum)}</b> de ${fmtMoney(t.pot)} · ${paidCount}/${state.players.length} pagaram`;
+  $('#settlePayTotal').innerHTML = tr('Recebido: <b>{paid}</b> de {pot} · {n}/{total} pagaram', { paid: fmtMoney(paidSum), pot: fmtMoney(t.pot), n: paidCount, total: state.players.length });
 
   // 2. Prêmios
   const winners = state.players
@@ -1104,15 +1238,15 @@ function renderSettle() {
     const place = places.get(p.id);
     return `<label class="settle-row${p.prizeSent ? ' done' : ''}">
       <input type="checkbox" data-sent="${p.id}"${p.prizeSent ? ' checked' : ''}>
-      <span class="sname">${place === 1 ? '🏆' : `${place}º`} ${escapeHtml(p.name)}</span>
+      <span class="sname">${place === 1 ? '🏆' : ord(place)} ${escapeHtml(p.name)}</span>
       <span class="sval">${fmtMoney(prizeFor(place, pool))}</span>
     </label>`;
   }).join('');
-  if (pending > 0 && alive.length > 1) html += `<p class="hint">${pending} prêmio(s) ainda sem dono: são definidos quando os jogadores forem eliminados.</p>`;
-  $('#settlePrizeList').innerHTML = html || '<p class="hint">Nenhum prêmio definido ainda.</p>';
+  if (pending > 0 && alive.length > 1) html += `<p class="hint">${tr('{n} prêmio(s) ainda sem dono: são definidos quando os jogadores forem eliminados.', { n: pending })}</p>`;
+  $('#settlePrizeList').innerHTML = html || `<p class="hint">${tr('Nenhum prêmio definido ainda.')}</p>`;
   const sent = winners.filter((p) => p.prizeSent).reduce((a, p) => a + prizeFor(places.get(p.id), pool), 0);
   const fee = t.pot - pool;
-  $('#settlePrizeTotal').innerHTML = `Enviado: <b>${fmtMoney(sent)}</b> de ${fmtMoney(pool)}${fee > 0 ? ` · taxa da casa: ${fmtMoney(fee)}` : ''}`;
+  $('#settlePrizeTotal').innerHTML = tr('Enviado: <b>{sent}</b> de {pool}', { sent: fmtMoney(sent), pool: fmtMoney(pool) }) + (fee > 0 ? tr(' · taxa da casa: {fee}', { fee: fmtMoney(fee) }) : '');
 }
 
 async function copyText(text, btn, label) {
@@ -1123,8 +1257,8 @@ async function copyText(text, btn, label) {
     try { ok = document.execCommand('copy'); } catch (e2) { ok = false; }
     ta.remove();
   }
-  btn.textContent = ok ? '✔ Copiado!' : 'Não consegui copiar';
-  setTimeout(() => { btn.textContent = label; }, 2000);
+  btn.textContent = tr(ok ? '✔ Copiado!' : 'Não consegui copiar');
+  setTimeout(() => { btn.textContent = tr(label); }, 2000);
 }
 
 $('#openSettleBtn').addEventListener('click', openSettle);
@@ -1164,7 +1298,7 @@ const HANDS = [
 function renderHands() {
   $('#handsList').innerHTML = HANDS.map(([name, desc, cards]) => `
     <li class="hand">
-      <div class="hand-text"><b>${name}</b><span class="muted">${desc}</span></div>
+      <div class="hand-text"><b>${tr(name)}</b><span class="muted">${tr(desc)}</span></div>
       <div class="cards">${cards.split(' ').map((c) => {
         const red = /[♥♦]/.test(c);
         return `<span class="card-mini${red ? ' red' : ''}">${c.slice(0, -1)}<i>${c.slice(-1)}</i></span>`;
@@ -1186,7 +1320,7 @@ function renderShot() {
   const left = shot.running ? Math.max(0, shot.endAt - Date.now()) : (shot.endAt ? 0 : shotMs());
   const secs = Math.ceil(left / 1000);
   setText($('#shotVal'), String(secs));
-  setText($('#shotHint'), shot.running ? 'toque para reiniciar' : (shot.endAt ? 'tempo esgotado' : 'toque para iniciar'));
+  setText($('#shotHint'), tr(shot.running ? 'toque para reiniciar' : (shot.endAt ? 'tempo esgotado' : 'toque para iniciar')));
   $('#shotBtn').classList.toggle('running', shot.running);
   $('#shotBtn').classList.toggle('danger', (shot.running && secs <= 10) || (!shot.running && !!shot.endAt));
 }
@@ -1237,6 +1371,8 @@ let pollTimer = null;
 let remoteV = -1;
 
 const saveSync = () => localStorage.setItem(SYNC_KEY, JSON.stringify(sync));
+// Modo TV: acompanhando uma mesa, com timer e tabela em tela cheia e sem botões
+const isTv = () => sync.mode === 'viewer' && !!sync.tv;
 const liveLink = (code) => `${location.origin}${location.pathname}?mesa=${code}`;
 
 async function liveApi(method, body, query = '') {
@@ -1249,14 +1385,14 @@ async function liveApi(method, body, query = '') {
   try { j = await r.json(); } catch (e) { /* resposta sem JSON */ }
   // Diferença entre o relógio deste aparelho e o do servidor
   if (j.now && t1 - t0 < 3000) clockOffset = j.now - (t0 + t1) / 2;
-  if (!r.ok) throw Object.assign(new Error(j.error || `Erro ${r.status}`), { status: r.status });
+  if (!r.ok) throw Object.assign(new Error((j.error && tr(j.error)) || tr('Erro {s}', { s: r.status })), { status: r.status });
   return j;
 }
 
 function snapshot() {
   const s = JSON.parse(JSON.stringify({
     levels: state.levels, settings: state.settings, timer: state.timer,
-    players: state.players, outSeq: state.outSeq,
+    players: state.players, outSeq: state.outSeq, dealer: state.dealer,
   }));
   if (s.timer.running && s.timer.endAt) s.timer.endAt += clockOffset; // para o relógio do servidor
   return s;
@@ -1280,7 +1416,7 @@ async function pushNow() {
       const code = sync.code;
       sync = { mode: null };
       saveSync(); renderLive();
-      notify(`A transmissão da mesa ${code} foi encerrada (o código expirou). Toque em "📡 Ao vivo" para transmitir de novo.`);
+      notify(tr('A transmissão da mesa {code} foi encerrada (o código expirou). Toque em "📡 Ao vivo" para transmitir de novo.', { code }));
     } else {
       pushError = true;
       schedulePush(5000); // tenta de novo
@@ -1301,31 +1437,31 @@ async function startHost() {
     renderLive();
   } catch (e) {
     notify(e.status === 503
-      ? 'A mesa ao vivo ainda não está configurada no servidor (falta conectar o banco de dados na Vercel).'
-      : `Não consegui criar a mesa ao vivo: ${e.message}`);
+      ? tr('A mesa ao vivo ainda não está configurada no servidor (falta conectar o banco de dados na Vercel).')
+      : tr('Não consegui criar a mesa ao vivo: {msg}', { msg: e.message }));
   }
 }
 
 async function stopHost() {
-  if (!await ask(`Parar de transmitir a mesa ${sync.code}? Quem está acompanhando vai ser desconectado.`)) return;
+  if (!await ask(tr('Parar de transmitir a mesa {code}? Quem está acompanhando vai ser desconectado.', { code: sync.code }))) return;
   try { await liveApi('POST', { action: 'close', code: sync.code, secret: sync.secret }); } catch (e) { /* já encerrada */ }
   sync = { mode: null };
   saveSync(); renderLive();
 }
 
-async function joinTable(raw) {
+async function joinTable(raw, { tv = false } = {}) {
   const code = String(raw || '').trim().toUpperCase();
-  if (!CODE_OK.test(code)) return notify('Código inválido. São 5 letras/números, como K7P2Q.');
+  if (!CODE_OK.test(code)) return notify(tr('Código inválido. São 5 letras/números, como K7P2Q.'));
   if (sync.mode === 'host') {
-    if (sync.code === code) return notify('Esta é a mesa que você está transmitindo.');
-    if (!await ask(`Você está transmitindo a mesa ${sync.code}. Parar a transmissão e acompanhar a mesa ${code}?`)) return;
+    if (sync.code === code) return notify(tr('Esta é a mesa que você está transmitindo.'));
+    if (!await ask(tr('Você está transmitindo a mesa {old}. Parar a transmissão e acompanhar a mesa {code}?', { old: sync.code, code }))) return;
     try { await liveApi('POST', { action: 'close', code: sync.code, secret: sync.secret }); } catch (e) { /* ok */ }
   }
   let j;
   try { j = await liveApi('GET', null, `?code=${code}`); } catch (e) {
-    return notify(e.status === 404 ? `Mesa ${code} não encontrada. Confira o código ou se a transmissão ainda está ativa.` : `Não consegui conectar: ${e.message}`);
+    return notify(e.status === 404 ? tr('Mesa {code} não encontrada. Confira o código ou se a transmissão ainda está ativa.', { code }) : tr('Não consegui conectar: {msg}', { msg: e.message }));
   }
-  sync = { mode: 'viewer', code };
+  sync = { mode: 'viewer', code, tv };
   saveSync();
   remoteV = -1;
   lastPollOk = Date.now();
@@ -1355,6 +1491,7 @@ function applyRemote(j) {
   state.settings = { ...defaultSettings(), ...s.settings };
   state.players = Array.isArray(s.players) ? s.players : [];
   state.outSeq = s.outSeq || 0;
+  state.dealer = s.dealer || null;
   const t = { ...defaultState().timer, ...s.timer };
   if (t.running && t.endAt) t.endAt -= clockOffset; // para o relógio deste aparelho
   state.timer = t;
@@ -1374,7 +1511,7 @@ async function poll() {
     if (!j.unchanged) applyRemote(j);
     else remoteV = j.v;
   } catch (e) {
-    if (e.status === 404) return leaveTable(`A mesa ${sync.code} foi encerrada.`);
+    if (e.status === 404) return leaveTable(tr('A mesa {code} foi encerrada.', { code: sync.code }));
   }
   renderLiveStatus();
   schedulePoll(document.visibilityState === 'visible' ? 2000 : 6000);
@@ -1397,14 +1534,14 @@ function renderLiveStatus() {
   const ago = (t) => Math.round((Date.now() - t) / 1000);
   if (sync.mode === 'host') {
     const el = $('#hostStatus');
-    if (pushError) { el.textContent = '⚠ Sem conexão: tentando enviar de novo…'; el.className = 'live-status center bad'; }
-    else if (lastPushOk) { el.textContent = `✔ Sincronizado (última atualização há ${ago(lastPushOk)}s)`; el.className = 'live-status center ok'; }
-    else { el.textContent = 'Conectando…'; el.className = 'live-status center'; }
+    if (pushError) { el.textContent = tr('⚠ Sem conexão: tentando enviar de novo…'); el.className = 'live-status center bad'; }
+    else if (lastPushOk) { el.textContent = tr('✔ Sincronizado (última atualização há {s}s)', { s: ago(lastPushOk) }); el.className = 'live-status center ok'; }
+    else { el.textContent = tr('Conectando…'); el.className = 'live-status center'; }
     $('#livePill').classList.toggle('offline', pushError);
   }
   if (sync.mode === 'viewer') {
     const off = Date.now() - lastPollOk > 8000;
-    setText($('#viewerStatus'), off ? '· ⚠ sem conexão' : '');
+    setText($('#viewerStatus'), off ? tr('· ⚠ sem conexão') : '');
     $('#livePill').classList.toggle('offline', off);
   }
 }
@@ -1419,7 +1556,7 @@ function renderLive() {
 
   const pill = $('#livePill');
   pill.hidden = !mode;
-  pill.textContent = mode === 'host' ? `● AO VIVO · ${sync.code}` : mode === 'viewer' ? `👀 ${sync.code}` : '';
+  pill.textContent = mode === 'host' ? `${tr('● AO VIVO')} · ${sync.code}` : mode === 'viewer' ? `👀 ${sync.code}` : '';
   pill.classList.toggle('watching', mode === 'viewer');
   $('#liveBtn').classList.toggle('on', !!mode);
 
@@ -1437,6 +1574,8 @@ function renderLive() {
     $('#viewerCode').textContent = sync.code;
     $('#viewerCode2').textContent = sync.code;
   }
+  renderToggles();
+  if (isTv()) { showTab('timer'); setWakeLock(true); }
   renderLiveStatus();
 }
 
@@ -1450,15 +1589,23 @@ $('#liveSheet').addEventListener('click', (e) => { if (e.target.id === 'liveShee
 $('#hostBtn').addEventListener('click', startHost);
 $('#stopHostBtn').addEventListener('click', stopHost);
 $('#joinForm').addEventListener('submit', (e) => { e.preventDefault(); joinTable($('#joinCode').value); });
+$('#joinTvBtn').addEventListener('click', () => joinTable($('#joinCode').value, { tv: true }));
+$('#copyTvLinkBtn').addEventListener('click', (e) => copyText(`${liveLink(sync.code)}&tv=1`, e.currentTarget, '📺 Copiar link do modo TV'));
+$('#tvFsBtn').addEventListener('click', toggleFullscreen);
+$('#tvExitBtn').addEventListener('click', () => {
+  sync.tv = false;
+  saveSync(); renderLive();
+  if (fsElement()) toggleFullscreen();
+});
 $('#joinCode').addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase(); });
 const confirmLeave = async () => {
-  if (await ask(`Sair da mesa ${sync.code}? Você volta para o torneio salvo neste aparelho.`)) { leaveTable(); closeLive(); }
+  if (await ask(tr('Sair da mesa {code}? Você volta para o torneio salvo neste aparelho.', { code: sync.code }))) { leaveTable(); closeLive(); }
 };
 $('#leaveBtn').addEventListener('click', confirmLeave);
 $('#leaveBtn2').addEventListener('click', confirmLeave);
 $('#copyLiveLinkBtn').addEventListener('click', (e) => copyText(liveLink(sync.code), e.currentTarget, '📋 Copiar link'));
 $('#shareLiveBtn').addEventListener('click', async () => {
-  try { await navigator.share({ title: "Sushi's Poker ao vivo", text: `Acompanhe a mesa ${sync.code}:`, url: liveLink(sync.code) }); } catch (e) { /* cancelado */ }
+  try { await navigator.share({ title: tr("Sushi's Poker ao vivo"), text: tr('Acompanhe a mesa {code}:', { code: sync.code }), url: liveLink(sync.code) }); } catch (e) { /* cancelado */ }
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#liveSheet').hidden) closeLive(); });
 
@@ -1483,16 +1630,41 @@ function startLive() {
   // Link de convite: ...?mesa=K7P2Q
   const params = new URLSearchParams(location.search);
   const invited = (params.get('mesa') || '').toUpperCase();
+  const invitedTv = params.get('tv') === '1';
   if (invited) history.replaceState(null, '', location.pathname);
 
   renderLive();
   if (sync.mode === 'viewer') { lastPollOk = Date.now(); schedulePoll(0); }
   if (sync.mode === 'host') schedulePush(0);
 
-  if (invited && !(sync.mode === 'viewer' && sync.code === invited)) joinTable(invited);
+  if (invited && sync.mode === 'viewer' && sync.code === invited) {
+    if (invitedTv && !sync.tv) { sync.tv = true; saveSync(); renderLive(); }
+  } else if (invited) joinTable(invited, { tv: invitedTv });
 }
 
+/* ---------------- Idioma (PT / EN) ---------------- */
+function renderLangButtons() {
+  document.querySelectorAll('.lang-btn').forEach((b) => {
+    const on = b.dataset.lang === LANG;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', String(on));
+  });
+}
+function setLang(lang) {
+  if (lang === LANG) return;
+  LANG = lang;
+  try { localStorage.setItem(LANG_KEY, lang); } catch (e) { /* ignora */ }
+  translateStatic();
+  renderAll();
+  renderHands();
+  renderLive();
+  renderLangButtons();
+}
+document.querySelectorAll('.lang-btn').forEach((b) => b.addEventListener('click', () => setLang(b.dataset.lang)));
+
 /* ---------------- Início ---------------- */
+translateStatic();
+renderLangButtons();
 clampLevel();
 fillSettings();
 renderLevels();

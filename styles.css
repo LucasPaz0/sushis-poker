@@ -81,6 +81,20 @@ body {
 .tab:hover { color: var(--text); }
 .tab.active { background: var(--panel-2); color: var(--accent); border-color: var(--line); }
 
+/* Acompanhar mesa: campo do código numa linha, botões embaixo */
+#joinForm { flex-wrap: wrap; }
+#joinForm input { flex: 1 1 100%; min-width: 0; }
+#joinForm .btn { flex: 1 1 0; }
+
+/* Botões de idioma (PT / EN), à direita das abas */
+.lang-switch { display: flex; align-items: center; gap: 2px; margin-left: 6px; padding: 2px; border: 1px solid var(--line); border-radius: 10px; }
+.lang-btn {
+  background: transparent; color: var(--muted); border: 0; border-radius: 8px;
+  padding: 6px 8px; font-size: .78rem; font-weight: 700; letter-spacing: .06em; cursor: pointer;
+}
+.lang-btn:hover { color: var(--text); }
+.lang-btn.active { background: linear-gradient(180deg, var(--gold-hi), var(--gold-lo)); color: #1a1000; }
+
 main { max-width: 960px; margin: 0 auto; padding: 16px; }
 
 .panel { display: none; }
@@ -288,6 +302,28 @@ table.levels { width: 100%; border-collapse: collapse; }
 
 .toggles { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 20px; }
 .toggle.off { opacity: .45; text-decoration: line-through; }
+
+/* Sorteio do botão */
+.status-badge.dealer { background: rgba(232, 177, 58, .14); color: var(--accent); margin-left: 6px; }
+.dealer-draw { margin-top: 14px; text-align: center; }
+.dealer-result { margin: 10px 0 0; font-size: 1.05rem; }
+.dealer-result b { color: var(--accent); }
+.draw-modal .modal-box { text-align: center; }
+.draw-title { color: var(--muted); text-transform: uppercase; letter-spacing: .1em; font-size: .85rem; }
+.draw-name { font-family: var(--display); font-size: clamp(2.2rem, 10vw, 3.6rem); color: var(--text); margin: 8px 0 18px; min-height: 1.2em; overflow-wrap: anywhere; }
+.draw-name.done { color: var(--accent); text-shadow: 0 0 24px rgba(232, 177, 58, .5); animation: pulse .8s ease-in-out 2; }
+
+/* Modo TV: só o timer e a tabela, sem botões */
+html.tv .controls, html.tv .toggles, html.tv .shot-clock,
+html.tv .viewer-banner, html.tv .live-pill { display: none !important; }
+@media (orientation: landscape) and (min-height: 501px) {
+  html.fs.tv .clock { font-size: min(19vw, 31vh); }
+  html.fs.tv .blinds-now .val { font-size: min(8.5vw, 13vh); }
+  html.fs.tv .stat .val { font-size: min(2.4vw, 3.8vh); }
+}
+.tv-bar { position: fixed; right: 12px; bottom: 12px; z-index: 50; display: flex; gap: 8px; opacity: .25; transition: opacity .2s; }
+.tv-bar:hover, .tv-bar:focus-within { opacity: 1; }
+.tv-bar[hidden] { display: none; }
 
 /* Tela cheia: esconde o topo e mostra tudo numa tela só — timer à esquerda, tabela do pote à direita.
    A classe .fs no <html> é ligada pelo app.js quando entra em tela cheia. */
@@ -508,6 +544,7 @@ body.no-scroll { overflow: hidden; }
 .pot-table .money { font-weight: 700; color: var(--accent); white-space: nowrap; }
 .pot-table tr.out td { opacity: .55; }
 .pot-table tr.out .pname-cell { text-decoration: line-through; }
+.pot-table tr.out .pname-cell .muted { display: inline-block; text-decoration: none; } /* "(fora)" sem risco */
 .pot-table tbody tr:first-child td { background: rgba(232, 177, 58, .08); }
 .pot-table tfoot td { border-bottom: 0; border-top: 1px solid var(--line-strong); font-weight: 700; color: var(--text); }
 
@@ -603,6 +640,10 @@ body.viewer .counter { grid-template-columns: 1fr; }
   .sheet { padding: 8px; }
   .qr svg { width: 150px; height: 150px; }
   .tab .ti { font-size: 1.1rem; }
+  .toggles { gap: 5px; }
+  .toggles .btn { padding: 4px 7px; font-size: .78rem; white-space: nowrap; min-width: 0; }
+  .lang-switch { flex: 0 0 auto; flex-direction: column; margin-left: 2px; gap: 2px; }
+  .lang-btn { padding: 3px 6px; font-size: .66rem; }
   .level-label { font-size: 1.25rem; }
   .info-line { font-size: .85rem; }
   main { padding: 12px; }
@@ -614,4 +655,12 @@ body.viewer .counter { grid-template-columns: 1fr; }
   .levels input { min-width: 0; padding: 8px 4px; }
   .levels td { padding: 3px 2px; }
   .levels td:first-child { width: 22px; }
+}
+
+/* Celulares bem pequenos (até 360 px): abas um pouco menores para caber com os botões PT/EN */
+@media (max-width: 360px) {
+  .tab { font-size: .64rem; }
+  .lang-btn { padding: 3px 4px; }
+  .controls .btn:not(.big) { min-width: 42px; padding-left: 8px; padding-right: 8px; }
+  .controls .btn.big { white-space: nowrap; font-size: 1rem; }
 }

@@ -25,6 +25,10 @@
       <button class="tab" data-tab="players"><span class="ti">👥</span> Jogadores</button>
       <button class="tab" data-tab="extras"><span class="ti">🧰</span> Extras</button>
       <button class="tab" data-tab="history"><span class="ti">📜</span> Histórico</button>
+      <div class="lang-switch" role="group" aria-label="Idioma / Language">
+        <button class="lang-btn" data-lang="pt" title="Português">PT</button>
+        <button class="lang-btn" data-lang="en" title="English">EN</button>
+      </div>
     </nav>
   </header>
 
@@ -49,6 +53,7 @@
       <div class="next" id="nextLevel"></div>
       <div class="info-line" id="infoLine"></div>
       <div class="status-badge" id="rebuyStatus" hidden></div>
+      <div class="status-badge dealer" id="dealerBadge" hidden></div>
 
       <div class="controls">
         <button class="btn" id="prevBtn" title="Nível anterior">⏮</button>
@@ -75,6 +80,7 @@
       <div class="toggles">
         <button class="btn small toggle viewer-ok" id="soundBtn">🔊 Som</button>
         <button class="btn small viewer-ok" id="fullscreenBtn">⛶ Tela cheia</button>
+        <button class="btn small toggle viewer-ok" id="notifyBtn">🔔 Avisos</button>
         <button class="btn small viewer-ok live-btn" id="liveBtn">📡 Ao vivo</button>
       </div>
       </div>
@@ -195,6 +201,10 @@
         </form>
         <div id="playersList" class="players"></div>
         <p class="empty" id="playersEmpty">Nenhum jogador ainda.</p>
+        <div class="dealer-draw" id="dealerDraw" hidden>
+          <button class="btn" id="drawDealerBtn">🎲 Sortear quem começa no botão</button>
+          <p class="dealer-result" id="dealerResult"></p>
+        </div>
       </div>
 
       <div class="card" id="resultsCard" hidden>
@@ -321,7 +331,9 @@
         <form class="row" id="joinForm">
           <input type="text" id="joinCode" placeholder="Código (ex.: K7P2Q)" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false">
           <button class="btn" type="submit">Acompanhar</button>
+          <button class="btn" type="button" id="joinTvBtn" title="Mostra o timer e a tabela em tela cheia, sem botões, para deixar numa TV ou notebook">📺 Modo TV</button>
         </form>
+        <p class="hint">📺 <b>Modo TV</b>: abra o site na TV ou no notebook, digite o código da mesa e toque em "Modo TV". A tela mostra o timer e a tabela do pote, e quem controla é o celular que transmite.</p>
       </div>
 
       <div id="liveHost" hidden>
@@ -331,6 +343,7 @@
         <div class="row wrap center">
           <button class="btn small" id="copyLiveLinkBtn">📋 Copiar link</button>
           <button class="btn small" id="shareLiveBtn" hidden>📤 Compartilhar</button>
+          <button class="btn small" id="copyTvLinkBtn">📺 Copiar link do modo TV</button>
         </div>
         <p class="live-status center" id="hostStatus"></p>
         <div class="row center">
@@ -348,6 +361,21 @@
     </div>
   </div>
 
+  <div class="tv-bar" id="tvBar" hidden>
+    <button class="btn small" id="tvFsBtn">⛶ Tela cheia</button>
+    <button class="btn small" id="tvExitBtn">Sair do modo TV</button>
+  </div>
+
+  <div class="modal draw-modal" id="drawModal" hidden>
+    <div class="modal-box" role="dialog" aria-modal="true">
+      <p class="draw-title">🎲 Quem começa no botão</p>
+      <div class="draw-name" id="drawName"></div>
+      <div class="row center">
+        <button class="btn primary" id="drawOk" hidden>OK</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal" id="modal" hidden>
     <div class="modal-box" role="dialog" aria-modal="true">
       <p id="modalText"></p>
@@ -359,6 +387,7 @@
   </div>
 
   <script src="vendor/qrcode.js"></script>
+  <script src="i18n.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
