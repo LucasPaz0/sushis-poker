@@ -289,14 +289,74 @@ table.levels { width: 100%; border-collapse: collapse; }
 .toggles { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 20px; }
 .toggle.off { opacity: .45; text-decoration: line-through; }
 
-/* Tela cheia: esconde o topo, aumenta o timer e mostra o logo no canto */
-html:fullscreen .topbar { display: none; }
-html:fullscreen main { max-width: none; padding-top: 3vh; }
-html:fullscreen .clock { font-size: min(30vw, 34vh); }
-html:fullscreen .blinds-now .val { font-size: min(12vw, 14vh); }
-html:fullscreen #tab-timer::before { width: min(70vh, 90vw); opacity: .09; }
-html:-webkit-full-screen .topbar { display: none; }
-html:-webkit-full-screen .clock { font-size: min(30vw, 34vh); }
+/* Tela cheia: esconde o topo e mostra tudo numa tela só — timer à esquerda, tabela do pote à direita.
+   A classe .fs no <html> é ligada pelo app.js quando entra em tela cheia. */
+html.fs .topbar { display: none; }
+html.fs main { max-width: none; height: 100vh; height: 100dvh; padding: 2vh 2vw; overflow: hidden; }
+html.fs #tab-timer.active {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 38vw);
+  gap: 2.5vw;
+  align-items: center;
+  height: 100%;
+}
+html.fs #tab-timer:has(#potRankingCard[hidden]) { grid-template-columns: minmax(0, 1fr); }
+html.fs #tab-timer::before { top: 50%; left: 31%; width: min(80vh, 55vw); transform: translate(-50%, -50%); opacity: .09; }
+html.fs #tab-timer:has(#potRankingCard[hidden])::before { left: 50%; }
+html.fs .timer-main { min-width: 0; }
+html.fs .level-label { font-size: min(3.2vw, 5vh); margin-top: 0; }
+html.fs .clock { font-size: min(17vw, 22vh); margin: 1vh 0; }
+html.fs #tab-timer:has(#potRankingCard[hidden]) .clock { font-size: min(28vw, 32vh); }
+html.fs .progress { margin-bottom: 2vh; }
+html.fs .blinds-now .val { font-size: min(7.5vw, 9.5vh); }
+html.fs .blinds-now .sep { font-size: min(6vw, 9vh); }
+html.fs .ante { font-size: min(2vw, 2.8vh); min-height: 0; }
+html.fs .status-badge { margin-top: 1vh; }
+html.fs .next, html.fs .info-line { font-size: min(1.6vw, 2.3vh); margin-top: .6vh; }
+html.fs .controls { margin: 2.2vh 0; }
+html.fs .stat { padding: .7vh 8px; gap: 2px; }
+html.fs .stat .val { font-size: min(2vw, 3vh); }
+html.fs .toggles { margin-top: 1.6vh; }
+html.fs .pot-ranking { margin: 0; max-height: 100%; overflow: auto; align-self: center; }
+html.fs .pot-ranking h2 { font-size: min(1.9vw, 2.8vh); }
+html.fs .pot-table { font-size: min(1.55vw, 2.5vh); }
+html.fs .pot-table th { font-size: min(1vw, 1.6vh); }
+html.fs .pot-table td { padding: .9vh 6px; }
+
+/* Tela baixa (celular deitado): botões e caixas mais compactos para caber tudo */
+@media (max-height: 500px) and (orientation: landscape) {
+  html.fs main { padding: 1.5vh 2vw; }
+  html.fs .blinds-now .lbl { display: none; }
+  html.fs .status-badge { padding: 2px 10px; font-size: .75rem; }
+  html.fs .controls { margin: 1.2vh 0; }
+  html.fs .controls .btn { min-height: 34px; padding: 4px 12px; font-size: .9rem; }
+  html.fs .stat { flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 0 6px; padding: 4px 6px; }
+  html.fs .stat .lbl { white-space: nowrap; }
+  html.fs .stat .lbl { font-size: .6rem; letter-spacing: .04em; }
+  html.fs .stat .bbs { display: inline; margin: 0; font-size: .7rem; }
+  html.fs .stat .val { font-size: .9rem; }
+  html.fs .toggles { margin-top: 1vh; }
+  html.fs .toggles .btn { min-height: 28px; padding: 2px 10px; font-size: .75rem; }
+}
+
+/* Celular em pé na tela cheia: timer em cima, tabela embaixo (rola se tiver muitos jogadores) */
+@media (orientation: portrait) {
+  html.fs main { padding: 2vh 3vw; }
+  html.fs #tab-timer.active { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); align-items: start; gap: 1.5vh; }
+  html.fs #tab-timer::before { top: 22%; left: 50%; width: min(90vw, 45vh); }
+  html.fs .level-label { font-size: min(6vw, 3vh); }
+  html.fs .clock, html.fs #tab-timer:has(#potRankingCard[hidden]) .clock { font-size: min(26vw, 14vh); }
+  html.fs .blinds-now .val { font-size: min(11vw, 6vh); }
+  html.fs .blinds-now .sep { font-size: min(9vw, 5vh); }
+  html.fs .ante, html.fs .next, html.fs .info-line { font-size: min(3.6vw, 1.9vh); }
+  html.fs .controls { margin: 1.4vh 0; }
+  html.fs .stat .val { font-size: min(4.4vw, 2.3vh); }
+  html.fs .pot-ranking { align-self: stretch; padding: 10px; }
+  html.fs .pot-ranking h2 { font-size: min(4.4vw, 2.2vh); margin-bottom: 6px; }
+  html.fs .pot-table { font-size: min(3.6vw, 1.9vh); }
+  html.fs .pot-table th { font-size: min(2.6vw, 1.4vh); }
+  html.fs .pot-table td { padding: .6vh 3px; }
+}
 
 /* ---------- Textos de apoio ---------- */
 .hint { color: var(--muted); font-size: .85rem; margin: 8px 0; line-height: 1.4; }
@@ -435,6 +495,22 @@ body.no-scroll { overflow: hidden; }
 .card-mini i { font-style: normal; font-size: .95rem; }
 .card-mini.red { color: #c8102e; }
 
+/* ---------- Tabela "quem mais colocou no pote" (tela do timer) ---------- */
+.pot-ranking { max-width: 640px; margin: 20px auto 0; text-align: left; }
+.pot-ranking h2 { text-align: center; }
+.pot-table { width: 100%; border-collapse: collapse; font-size: .95rem; font-variant-numeric: tabular-nums; }
+.pot-table th { color: var(--muted); font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 6px 6px; text-align: left; border-bottom: 1px solid var(--line-strong); }
+.pot-table td { padding: 8px 6px; border-bottom: 1px solid var(--line); }
+.pot-table .c { text-align: center; }
+.pot-table .r { text-align: right; }
+.pot-table .rank { width: 36px; font-weight: 700; color: var(--accent); }
+.pot-table .pname-cell { font-weight: 600; }
+.pot-table .money { font-weight: 700; color: var(--accent); white-space: nowrap; }
+.pot-table tr.out td { opacity: .55; }
+.pot-table tr.out .pname-cell { text-decoration: line-through; }
+.pot-table tbody tr:first-child td { background: rgba(232, 177, 58, .08); }
+.pot-table tfoot td { border-bottom: 0; border-top: 1px solid var(--line-strong); font-weight: 700; color: var(--text); }
+
 /* ---------- Mesa ao vivo ---------- */
 .live-pill {
   margin-left: auto;
@@ -513,6 +589,10 @@ body.viewer .counter { grid-template-columns: 1fr; }
   .topbar { flex-direction: column; align-items: stretch; gap: 6px; }
   .brand { justify-content: center; }
   .live-pill { margin: 0 auto; }
+  .pot-table { font-size: .85rem; }
+  .pot-table th { font-size: .62rem; letter-spacing: .02em; padding: 6px 3px; }
+  .pot-table td { padding: 7px 3px; }
+  .pot-table .rank { width: 28px; }
   .brand img { width: 38px; height: 38px; }
   .brand-name { font-size: 1.25rem; }
   .tabs { justify-content: space-between; }

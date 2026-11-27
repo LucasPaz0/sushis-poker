@@ -378,6 +378,7 @@ function renderToggles() {
   $('#soundBtn').classList.toggle('off', !state.prefs.sound);
   $('#fullscreenBtn').hidden = !fsSupported();
   $('#fullscreenBtn').textContent = fsElement() ? '⛶ Sair da tela cheia' : '⛶ Tela cheia';
+  document.documentElement.classList.toggle('fs', !!fsElement());
 }
 $('#soundBtn').addEventListener('click', () => {
   state.prefs.sound = !state.prefs.sound;
@@ -728,6 +729,39 @@ function renderPlayers() {
   $('#potTimer').textContent = fmtMoney(t.pot);
   $('#playersTimer').textContent = `${t.alive} / ${state.players.length}`;
   renderAvgStack(t);
+  renderPotRanking(t);
+}
+
+// Tabela da tela do timer: o que cada jogador colocou no pote, de quem colocou mais para quem colocou menos.
+// Empate no valor = mesma posição (ex.: 1º, 1º, 3º).
+function renderPotRanking(t = totals()) {
+  const card = $('#potRankingCard');
+  card.hidden = !state.players.length;
+  if (!state.players.length) return;
+  const rows = state.players
+    .map((p) => ({ p, total: playerTotal(p) }))
+    .sort((a, b) => b.total - a.total || a.p.name.localeCompare(b.p.name, 'pt-BR'));
+  let pos = 0;
+  $('#potRankingBody').innerHTML = rows.map(({ p, total }, i) => {
+    if (i === 0 || total !== rows[i - 1].total) pos = i + 1;
+    const rank = `${pos}º`;
+    return `<tr class="${p.out ? 'out' : ''}">
+      <td class="c rank">${rank}</td>
+      <td class="pname-cell">${escapeHtml(p.name)}${p.out ? ' <span class="muted">(fora)</span>' : ''}</td>
+      <td class="c">${p.buyins}</td>
+      <td class="c">${p.rebuys}</td>
+      <td class="c">${p.addons}</td>
+      <td class="r money">${fmtMoney(total)}</td>
+    </tr>`;
+  }).join('');
+  $('#potRankingFoot').innerHTML = `<tr>
+    <td></td>
+    <td>Total</td>
+    <td class="c">${t.buyins}</td>
+    <td class="c">${t.rebuys}</td>
+    <td class="c">${t.addons}</td>
+    <td class="r money">${fmtMoney(t.pot)}</td>
+  </tr>`;
 }
 
 function renderResults(places, pool) {

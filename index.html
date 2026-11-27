@@ -35,6 +35,7 @@
     </div>
     <!-- ================= TIMER ================= -->
     <section id="tab-timer" class="panel active">
+      <div class="timer-main">
       <div class="level-label" id="levelLabel">Nível 1</div>
       <div class="clock" id="clock">15:00</div>
       <div class="progress"><div id="progressBar"></div></div>
@@ -75,6 +76,27 @@
         <button class="btn small toggle viewer-ok" id="soundBtn">🔊 Som</button>
         <button class="btn small viewer-ok" id="fullscreenBtn">⛶ Tela cheia</button>
         <button class="btn small viewer-ok live-btn" id="liveBtn">📡 Ao vivo</button>
+      </div>
+      </div>
+
+      <div class="card pot-ranking" id="potRankingCard" hidden>
+        <h2>Quem mais colocou no pote</h2>
+        <div class="table-wrap">
+          <table class="pot-table">
+            <thead>
+              <tr>
+                <th class="c">#</th>
+                <th>Jogador</th>
+                <th class="c" title="Entradas (buy-ins)">Entrada</th>
+                <th class="c">Rebuy</th>
+                <th class="c">Add-on</th>
+                <th class="r">No pote</th>
+              </tr>
+            </thead>
+            <tbody id="potRankingBody"></tbody>
+            <tfoot id="potRankingFoot"></tfoot>
+          </table>
+        </div>
       </div>
     </section>
 
