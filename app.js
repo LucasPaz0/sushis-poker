@@ -731,6 +731,7 @@ function placings() {
 
 // Stack médio e quantos big blinds ele representa (no intervalo, usa o BB do próximo nível)
 function renderAvgStack(t = totals()) {
+  setText($('#chipsTimer'), fmtNum(t.chips)); // fichas na mesa (aparece no modo TV)
   const el = $('#avgStack');
   if (!t.alive || !t.chips) { setText(el, '–'); return; }
   const avg = Math.round(t.chips / t.alive);

@@ -86,6 +86,7 @@ const EN = {
   '⏸ Pausar': '⏸ Pause',
   'Pote': 'Pot',
   'Stack médio': 'Avg. stack',
+  'Fichas na mesa': 'Chips on table',
   'Tocar para iniciar / reiniciar': 'Tap to start / restart',
   'Decisão': 'Decision',
   'toque para iniciar': 'tap to start',

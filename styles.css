@@ -316,6 +316,10 @@ table.levels { width: 100%; border-collapse: collapse; }
 /* Modo TV: só o timer e a tabela, sem botões */
 html.tv .controls, html.tv .toggles, html.tv .shot-clock,
 html.tv .viewer-banner, html.tv .live-pill { display: none !important; }
+/* Fichas na mesa: só no modo TV, como 4º quadro ao lado de pote, jogadores e stack médio */
+.stat.tv-only { display: none; }
+html.tv .stat.tv-only { display: flex; }
+html.tv .stats { grid-template-columns: repeat(4, 1fr); max-width: none; }
 @media (orientation: landscape) and (min-height: 501px) {
   html.fs.tv .clock { font-size: min(19vw, 31vh); }
   html.fs.tv .blinds-now .val { font-size: min(8.5vw, 13vh); }

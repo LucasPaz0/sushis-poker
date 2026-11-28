@@ -1,6 +1,6 @@
 // Service worker: guarda os arquivos do app para funcionar offline.
 // Ao mudar qualquer arquivo do app, aumente a versão abaixo para os celulares baixarem a nova versão.
-const CACHE = 'sushis-poker-v20';
+const CACHE = 'sushis-poker-v21';
 const ASSETS = [
   './',
   './index.html',
